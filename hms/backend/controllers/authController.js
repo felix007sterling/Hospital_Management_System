@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const PatientProfile = require('../models/PatientProfile');
+const DoctorProfile = require('../models/DoctorProfile');
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -10,10 +11,17 @@ const generateToken = (id) => {
 };
 
 const register = async (req, res) => {
-  const { name, email, password, phone, age, gender, bloodGroup, emergencyContact, address } = req.body;
+  const {
+    name, email, password, phone, role,
+    age, gender, bloodGroup, emergencyContact, address,
+    specialization, qualification, experience, availableDays, consultationFee
+  } = req.body;
 
-  if (!name || !email || !password || !age || !gender || !bloodGroup || !emergencyContact) {
+  if (!name || !email || !password || !role) {
     return res.status(400).json({ message: 'Please fill all required fields' });
+  }
+  if (!['patient', 'doctor', 'admin'].includes(role)) {
+    return res.status(400).json({ message: 'Invalid role' });
   }
 
   const existingUser = await User.findOne({ email });
@@ -21,15 +29,41 @@ const register = async (req, res) => {
     return res.status(400).json({ message: 'User already exists' });
   }
 
-  const user = await User.create({ name, email, password, phone, role: 'patient' });
-  await PatientProfile.create({
-    user: user._id,
-    age,
-    gender,
-    bloodGroup,
-    emergencyContact,
-    address: address || ''
-  });
+  if (role === 'patient') {
+    if (!age || !gender || !bloodGroup || !emergencyContact) {
+      return res.status(400).json({ message: 'Please fill all patient profile fields' });
+    }
+  }
+  if (role === 'doctor') {
+    if (!specialization || !qualification || experience == null || !consultationFee) {
+      return res.status(400).json({ message: 'Please fill all doctor profile fields' });
+    }
+  }
+
+  const user = await User.create({ name, email, password, phone, role });
+
+  if (role === 'patient') {
+    await PatientProfile.create({
+      user: user._id,
+      age,
+      gender,
+      bloodGroup,
+      emergencyContact,
+      address: address || ''
+    });
+  } else if (role === 'doctor') {
+    const daysArr = Array.isArray(availableDays)
+      ? availableDays
+      : (availableDays || '').split(',').map((d) => d.trim()).filter(Boolean);
+    await DoctorProfile.create({
+      user: user._id,
+      specialization,
+      qualification,
+      experience,
+      availableDays: daysArr,
+      consultationFee
+    });
+  }
 
   res.status(201).json({
     _id: user._id,
